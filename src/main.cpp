@@ -14,27 +14,30 @@ constexpr double pi() { return M_PI; }
 double deg2rad(double x) { return x * pi() / 180; }
 double rad2deg(double x) { return x * 180 / pi(); }
 
+
+/*Variable to control flow execution 
+during twiddle algorithm*/
 bool inc_p = true;
 bool inc_check = true;
-bool dec_p = false;
-bool dec_check = false;
+
+// This variable is used to turn on twiddle optimization
 bool twiddle_on = false;
 
-int twiddle_id=0;
-int n = 0;
-int sub_move = 0;
-int ext_str_value=0;
 
-double p[] = {0.2,0.0004,10};
+int twiddle_id=0;    // used to iterate between different PID gains values during twiddle algorithm
+int n=0;			// used to store total number of iterations. 
+int max_n=300;		// maximum number of iterations after which PID gains are reset to initial values.
+int sub_move = 0;   
+
+/* Initial PID gains values*/
+double orig_p[] = {0.06,0.0001,3};
+double p[] = {0.06,0.0001,3};
 double dp[] = {p[0]/10.0,p[1]/10.0,p[2]/10.0};
 
-//double p[] = {0.2,0.0004,4};
-//double dp[] = {1.0,1.0,1.0};
 
-double total_cte = 0.0;
+double total_cte = 0.0;  
 double tol = 0.002;
-double avg_prev_err=0.0;
-int n_prev_err=1;
+double err;
 double best_err = 100000.0;
 
 
@@ -58,11 +61,13 @@ int main() {
   uWS::Hub h;
 
   PID pid;
+  
+  //PID gains initialization
+  pid.Init(p[0],p[1],p[2]);
   /**
    * TODO: Initialize the pid variable.
    */
    
-
   h.onMessage([&pid](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length, 
                      uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
@@ -89,71 +94,52 @@ int main() {
            *   Maybe use another PID controller to control the speed!
            */
 			
-			if (n==0) {
-				pid.Init(p[0],p[1],p[2]);
-				//twiddle_on=true;
-			}
-			
+			// Run twiddle optimization 
 			if (n>1) { twiddle_on=true; }
 			
-			double err;
 			if (twiddle_on==true) {
 				
 				total_cte+=cte*cte;
 				err=total_cte/(n-1);
-				std::cout <<"best err : " << best_err<<"\t"<<err<<"\n";
 				
-				if ((dp[0]+dp[1]+dp[2])>tol) {
+				if ((dp[0]+dp[1]+dp[2])>tol) {  // Checking if sum of dp's is less than tolerance
 					
 					if (inc_p==true){
 						p[twiddle_id]+=dp[twiddle_id];
 						inc_p = false;
-						std::cout<<"inc_p"<<"\n";
+						//std::cout<<"inc_p"<<"\n";
 					} else {
 						if (inc_check==true && err<best_err) {
-                        std::cout <<"best err : "<< best_err<<"\t"<<err<<"\n";
 						best_err=err;
-                        std::cout <<"best err : "<< best_err<<"\t"<<err<<"\n\n";
 						dp[twiddle_id]*=1.1;
-						//twiddle_id+=1;
-						std::cout<<"inc_check"<<"\n";
-						//inc_p=true;
+						//std::cout<<"inc_check"<<"\n";
 						inc_check=false;
 						sub_move+=1;
-						//dec_p=true;
-						//dec_check=true;
 						} else {
 							if (inc_check==true){
 								p[twiddle_id]-=2*dp[twiddle_id];
 								inc_check = false;
-								//dec_check = true;
-								//dec_p=false;
-								std::cout<<"dec_p"<<"\n";
+								//std::cout<<"dec_p"<<"\n";
 							} else {
 								if (err<best_err) {
 									best_err=err;
 									dp[twiddle_id]*=1.1;
 									sub_move+=1;
-									//twiddle_id+=1;
-									std::cout<<"dec_check"<<"\n";
-									//inc_p=true;
+									//std::cout<<"dec_check"<<"\n";
 								} else {
 									p[twiddle_id]+=dp[twiddle_id];
 									dp[twiddle_id]*=0.9;
 									sub_move+=1;
-									//twiddle_id+=1;
-									std::cout<<"None"<<"\n";
-									//inc_p=true
+									//std::cout<<"None"<<"\n";
 								}		
 							}
 						}	
 					}	
 				}
 			}				
-			
-				pid.Init(p[0],p[1],p[2]);
+
+				// Update steering values for PID controller.
 				pid.UpdateError(cte);
-			//pid.Twiddle();
 				steer_value=-pid.TotalError();
 				
 				if (sub_move>0) {
@@ -162,50 +148,29 @@ int main() {
 					inc_p=true;
 					inc_check=true;
 					sub_move=0;
-					if (best_err<err && twiddle_on==true){
-						if (avg_prev_err<err){
-							avg_prev_err=((avg_prev_err*n_prev_err)+err)/(n_prev_err+1);
-							n_prev_err+=1;
-						} else {
-							avg_prev_err=0.0;
-							n_prev_err=1.0;
-						}
-					}	
 				}
 								
-				
-				if (n_prev_err>10)//(abs(steer_value-angle)>0.5)
+				if (n>max_n)
 				{ 
 					total_cte=0.0;
 					best_err=100000;
-					pid.Init(0.2,0.0004,10);
-					dp[0]=0.02; dp[1]=0.00004; dp[2]=1;
-					n=100;
-					avg_prev_err=0.0;
-					n_prev_err=1.0;
+					pid.Init(orig_p[0],orig_p[1],orig_p[2]);
+					dp[0]=orig_p[0]/10; dp[1]=orig_p[1]/10; dp[2]=orig_p[2]/10;
+					n=0;
 				}
 				
 				n+=1;
 				
-			
 			if (steer_value>1) {
 				steer_value=1;
-				ext_str_value+=1;
 			}
 			else if (steer_value<-1) {
 				steer_value=-1;
-				ext_str_value+=1;
-			} else {
-				ext_str_value=0;
 			}
 		  
           // DEBUG
-		  std::cout <<"best err : " << best_err<<"\t"<<err<<"\n";
-		  std::cout<<inc_p<<"\t"<<inc_check<<"\t"<<dec_p<<"\t"<<dec_check<<"\n";
-		  std::cout<<dp[0]<<"\t"<<dp[1]<<"\t"<<dp[2]<<"\n";
-          std::cout << "CTE: " << cte << " Steering Value: " << steer_value 
-                    << std::endl;
-		  std::cout<<"\n";
+
+          std::cout << "CTE: " << cte << " Steering Value: " << steer_value << std::endl;
 
           json msgJson;
           msgJson["steering_angle"] = steer_value;

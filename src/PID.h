@@ -30,10 +30,7 @@ class PID {
    * @output The total PID error
    */
   double TotalError();
-  
-  void Twiddle(double cte);
-  
-  void Update_parameters(int var, double update_par);
+
 
  private:
   /**
